@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BGT PRO - Aplikasi Pesan Real-Time</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-database-compat.js"></script>
+    <style>
+        /* --- VARIABEL & GAYA DASAR --- */
+        :root { 
+            --bg: #f0f2f5; 
+            --sidebar: #111b21; 
+            --chat-bg: #e5ddd5; 
+            --msg-sent: #d9fdd3; 
+            --msg-received: #fff; 
+            --green: #25d366; 
+            --dark: #202c33; 
+            --header: #0b141a;
+            --hover: #182229;
+            --filter-active: #8696a0;
+        }
+        
+        * { 
+            margin: 0; 
+            padding: 0; 
+            box-sizing: border-box; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+        }
+        
+        /* Mencegah scroll horizontal di seluruh halaman */
+        html, body {
+            overflow-x: hidden;
+        }
+
+        body { 
+            display: flex; 
+            height: 100vh; 
+            background-color: var(--bg); 
+            overflow: hidden; /* Mencegah scroll di body */
+        }
+
+        /* --- KONTAINER UTAMA --- */
+        .app-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+        }
+        .sidebar { 
+            background-color: var(--sidebar); 
+            display: flex; 
+            flex-direction: column; 
+            width: 100%;
+            height: 100%;
+            flex-shrink: 0;
+        }
+        .chat-window { 
+            display: flex; 
+            flex-direction: column; 
+            background-color: #efeae2;
+            background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png');
+            width: 100%;
+            height: 100%;
+        }
+        .back-btn {
+            display: block;
+            margin-right: 15px;
+            color: #8696a0;
+            font-size: 20px;
+            cursor: pointer;
+        }
+
+        /* --- TAMPILAN MOBILE --- */
+        @media (max-width: 768px) {
+            body {
+                flex-direction: column;
+            }
+            .sidebar {
+                position: relative;
+                z-index: 1;
+            }
+            .chat-window {
+                position: absolute;
+                top: 0;
+                left: 100%;
+                transition: left 0.3s ease-out;
+                z-index: 2;
+            }
+            .chat-window.active {
+                left: 0;
+            }
+        }
+
+        /* --- TAMPILAN DESKTOP --- */
+        @media (min-width: 769px) {
+            body {
+                flex-direction: row;
+            }
+            .sidebar {
+                width: 350px;
+                position: static;
+            }
+            .chat-window {
+                position: static;
+                left: auto;
+                flex-grow: 1;
+                transition: none;
+            }
+            .back-btn {
+                display: none !important;
+            }
+        }
+
+        /* --- GAYA KOMPONEN --- */
+        .sidebar-header { 
+            padding: 10px 16px; 
+            display: flex; 
+            align-items: center; 
+            justify-content: space-between; 
+            background-color: var(--header);
+            color: white; 
+            height: 60px;
+            flex-shrink: 0; /* Mencegah header menyusut */
+        }
+        
+        .sidebar-header .logo {
+            font-size: 20px;
+            font-weight: 500;
+        }
+        
+        .sidebar-header .icons { 
+            display: flex; 
+            gap: 25px; 
+            font-size: 20px; 
+            cursor: pointer; 
+        }
+        
+        .sidebar-header .icons i {
+            color: #8696a0;
+        }
+        
+        .filter-tabs {
+            display: flex;
+            background-color: var(--header);
+            color: #8696a0;
+            padding: 0 16px;
+            height: 44px;
+            align-items: center;
+            flex-shrink: 0;
+        }
+        
+        .filter-tab {
+            padding: 6px 12px;
+            margin-right: 20px;
+            cursor: pointer;
+            font-size: 14px;
+            border-radius: 10px;
+            transition: all 0.2s;
+        }
+        
+        .filter-tab.active {
+            background-color: var(--hover);
+            color: white;
+        }
+        
+        .search-box { 
+            padding: 8px 16px; 
+            background-color: var(--header); 
+            flex-shrink: 0;
+        }
+        
+        .search-box input { 
+            width: 100%; 
+            padding: 9px 12px; 
+            border-radius: 8px; 
+            background-color: var(--hover); 
+            border: none; 
+            color: #e9edef;
+            outline: none; 
+            font-size: 14px;
+        }
+        
+        .search-box input::placeholder {
+            color: #8696a0;
+        }
+        
+        /* Area yang bisa di-scroll */
+        .chat-list { 
+            flex-grow: 1; /* Mengisi sisa ruang vertikal */
+            overflow-y: auto; /* Hanya area ini yang bisa di-scroll */
+            overflow-x: hidden; /* Mencegah scroll horizontal di dalam list */
+        }
+        
+        .chat-item { 
+            display: flex; 
+            align-items: center; 
+            padding: 12px 16px; 
+            cursor: pointer; 
+            color: white; 
+            transition: background-color 0.2s; 
+            position: relative;
+        }
+        
+        .chat-item:hover { 
+            background-color: var(--hover); 
+        }
+        
+        .chat-item img { 
+            width: 49px; 
+            height: 49px; 
+            border-radius: 50%; 
+            margin-right: 13px; 
+            object-fit: cover;
+        }
+        
+        .chat-item-details { 
+            flex-grow: 1; 
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+        }
+        
+        .chat-item-info {
+            overflow: hidden;
+        }
+        
+        .chat-item-details h4 { 
+            font-size: 16px; 
+            font-weight: 400; 
+            margin-bottom: 2px;
+        }
+        
+        .chat-item-details p { 
+            font-size: 13px; 
+            color: #8696a0; 
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            width: 200px;
+        }
+        
+        .chat-item-time {
+            font-size: 12px;
+            color: #8696a0;
+            margin-top: 3px;
+        }
+        
+        .chat-item-meta {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+        }
+        
+        .message-status {
+            display: flex;
+            align-items: center;
+            margin-top: 2px;
+        }
+        
+        .message-status i {
+            font-size: 12px;
+            margin-left: 2px;
+        }
+        
+        .message-status.read {
+            color: #53bdeb;
+        }
+        
+        .message-status.unread {
+            color: #8696a0;
+        }
+        
+        .unread-badge {
+            background-color: var(--green);
+            color: white;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            margin-top: 3px;
+        }
+        
+        .chat-header { 
+            padding: 10px 16px; 
+            background-color: var(--header); 
+            display: flex; 
+            align-items: center; 
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            height: 60px;
+            flex-shrink: 0;
+        }
+        
+        .chat-header img { 
+            width: 40px; 
+            height: 40px; 
+            border-radius: 50%; 
+            margin-right: 13px; 
+            object-fit: cover;
+        }
+        
+        .chat-header .info { 
+            flex-grow: 1; 
+        }
+        
+        .chat-header .info h3 { 
+            font-size: 18px; 
+            color: white;
+        }
+        
+        .chat-header .info p { 
+            font-size: 13px; 
+            color: #8696a0; 
+        }
+        
+        .chat-header .icons { 
+            display: flex; 
+            gap: 25px; 
+            font-size: 20px; 
+            color: #8696a0; 
+            cursor: pointer; 
+        }
+        
+        .messages { 
+            flex-grow: 1; 
+            padding: 20px 10px; 
+            overflow-y: auto; 
+            display: flex; 
+            flex-direction: column; 
+        }
+        
+        .message { 
+            display: flex; 
+            margin-bottom: 8px; 
+            max-width: 75%; 
+        }
+        
+        .message.sent { 
+            align-self: flex-end; 
+            flex-direction: column; 
+            align-items: flex-end; 
+        }
+        
+        .message.received { 
+            align-self: flex-start; 
+            flex-direction: column; 
+            align-items: flex-start; 
+        }
+        
+        .message-bubble { 
+            padding: 8px 12px; 
+            border-radius: 7.5px; 
+            line-height: 1.4;
+            position: relative;
+            max-width: 100%;
+            word-wrap: break-word;
+        }
+        
+        .message.sent .message-bubble { 
+            background-color: #dcf8c6; 
+        }
+        
+        .message.received .message-bubble { 
+            background-color: white; 
+        }
+        
+        .message-time { 
+            font-size: 11px; 
+            color: #999; 
+            margin-top: 4px; 
+        }
+        
+        .chat-input { 
+            padding: 10px 16px; 
+            background-color: var(--header); 
+            display: flex; 
+            align-items: center; 
+            gap: 12px; 
+            flex-shrink: 0;
+        }
+        
+        .chat-input i { 
+            color: #8696a0; 
+            font-size: 24px; 
+            cursor: pointer; 
+        }
+        
+        .chat-input input { 
+            flex-grow: 1; 
+            border: none; 
+            background-color: var(--hover); 
+            padding: 9px 12px; 
+            border-radius: 20px; 
+            font-size: 15px; 
+            outline: none; 
+            color: white;
+        }
+        
+        .chat-input input::placeholder {
+            color: #8696a0;
+        }
+        
+        .chat-input button { 
+            background-color: var(--green); 
+            color: white; 
+            border: none; 
+            width: 40px; 
+            height: 40px; 
+            border-radius: 50%; 
+            font-size: 18px; 
+            cursor: pointer; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+        }
+        
+        .welcome-screen { 
+            display: flex; 
+            flex-direction: column; 
+            justify-content: center; 
+            align-items: center; 
+            height: 100%; 
+            color: #8696a0; 
+            background-color: #efeae2;
+        }
+        
+        .welcome-screen i { 
+            font-size: 100px; 
+            margin-bottom: 20px; 
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container" id="app-container">
+        <aside class="sidebar">
+            <header class="sidebar-header">
+                <div class="logo">BGT PRO</div>
+                <div class="icons">
+                    <i class="fas fa-camera"></i>
+                    <i class="fas fa-ellipsis-v"></i>
+                </div>
+            </header>
+            
+            <div class="filter-tabs">
+                <div class="filter-tab active" data-filter="all">Semua</div>
+                <div class="filter-tab" data-filter="unread">Belum dibaca</div>
+                <div class="filter-tab" data-filter="groups">Grup</div>
+            </div>
+            
+            <div class="search-box">
+                <input type="text" placeholder="Cari atau mulai chat baru">
+            </div>
+            
+            <div class="chat-list" id="chat-list">
+                <!-- Daftar chat akan dimuat dari Firebase secara real-time -->
+            </div>
+        </aside>
+
+        <main class="chat-window" id="chat-window">
+            <header class="chat-header">
+                <i class="fas fa-arrow-left back-btn" id="back-btn"></i>
+                <img src="https://i.pravatar.cc/150?img=69" alt="Profile" id="chat-profile-img">
+                <div class="info">
+                    <h3 id="chat-name">Pilih chat untuk memulai</h3>
+                    <p id="chat-status">Pilih kontak dari daftar</p>
+                </div>
+                <div class="icons">
+                    <i class="fas fa-video"></i>
+                    <i class="fas fa-phone"></i>
+                    <i class="fas fa-search"></i>
+                    <i class="fas fa-ellipsis-v"></i>
+                </div>
+            </header>
+            
+            <div class="messages" id="messages">
+                <div class="welcome-screen">
+                    <i class="fab fa-whatsapp"></i>
+                    <h2>Selamat datang di BGT PRO</h2>
+                    <p>Pilih chat untuk memulai percakapan</p>
+                </div>
+            </div>
+            
+            <div class="chat-input">
+                <i class="fas fa-smile"></i>
+                <i class="fas fa-paperclip"></i>
+                <input type="text" id="message-input" placeholder="Ketik pesan...">
+                <i class="fas fa-microphone"></i>
+                <button id="send-btn"><i class="fas fa-paper-plane"></i></button>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- KONFIGURASI FIREBASE ---
+            const firebaseConfig = { 
+                apiKey: "AIzaSyCahZIFKFXMCokFNxCpFokNSVtKzN4llus", 
+                authDomain: "cedar-setup-425414-d7.firebaseapp.com", 
+                databaseURL: "https://cedar-setup-425414-d7-default-rtdb.firebaseio.com", 
+                projectId: "cedar-setup-425414-d7", 
+                storageBucket: "cedar-setup-425414-d7.firebasestorage.app", 
+                messagingSenderId: "723545991983", 
+                appId: "1:723545991983:web:379548d2b425a502a60fda", 
+                measurementId: "G-FPL6PF3KWJ" 
+            };
+            
+            firebase.initializeApp(firebaseConfig);
+            const database = firebase.database();
+            
+            // --- ELEMEN DOM ---
+            const chatList = document.getElementById('chat-list');
+            const messagesEl = document.getElementById('messages');
+            const messageInput = document.getElementById('message-input');
+            const sendBtn = document.getElementById('send-btn');
+            const chatName = document.getElementById('chat-name');
+            const chatStatus = document.getElementById('chat-status');
+            const chatProfileImg = document.getElementById('chat-profile-img');
+            const chatWindow = document.getElementById('chat-window');
+            const backBtn = document.getElementById('back-btn');
+            const filterTabs = document.querySelectorAll('.filter-tab');
+            
+            let currentUser = "User";
+            let activeChat = null;
+            let activeFilter = 'all';
+            
+            // --- FUNGSI UNTUK MEMUAT DAFTAR CHAT DARI FIREBASE ---
+            function loadChatList() {
+                const usersRef = database.ref('users');
+                
+                // Listener real-time untuk perubahan data di Firebase
+                usersRef.on('value', (snapshot) => {
+                    chatList.innerHTML = ''; // Kosongkan daftar sebelumnya
+                    
+                    if (!snapshot.exists()) {
+                        // Tampilkan pesan jika tidak ada data
+                        chatList.innerHTML = '<p style="color: #8696a0; text-align: center; padding: 20px;">Belum ada kontak. Tambahkan pengguna baru di Firebase.</p>';
+                        return;
+                    }
+                    
+                    snapshot.forEach((childSnapshot) => {
+                        const userData = childSnapshot.val();
+                        const userId = childSnapshot.key;
+                        
+                        // Jangan tampilkan pengguna saat ini di daftar chat
+                        if (userId === currentUser) return;
+                        
+                        const chatItem = document.createElement('div');
+                        chatItem.classList.add('chat-item');
+                        chatItem.dataset.userId = userId;
+                        
+                        const lastMessageTime = userData.lastMessageTime || '';
+                        const formattedTime = formatTime(lastMessageTime);
+                        
+                        const isRead = userData.lastMessageRead !== false;
+                        const statusClass = isRead ? 'read' : 'unread';
+                        const statusIcon = isRead ? 'fa-check-double' : 'fa-check';
+                        
+                        const unreadBadge = !isRead ? '<div class="unread-badge">1</div>' : '';
+                        
+                        chatItem.innerHTML = `
+                            <img src="${userData.profilePicture || `https://i.pravatar.cc/150?img=${Math.floor(Math.random() * 70)}`}" alt="${userData.name}">
+                            <div class="chat-item-details">
+                                <div class="chat-item-info">
+                                    <h4>${userData.name}</h4>
+                                    <p>${userData.lastMessage || 'Belum ada pesan'}</p>
+                                </div>
+                                <div class="chat-item-meta">
+                                    <div class="chat-item-time">${formattedTime}</div>
+                                    <div class="message-status ${statusClass}">
+                                        <i class="fas ${statusIcon}"></i>
+                                    </div>
+                                    ${unreadBadge}
+                                </div>
+                            </div>
+                        `;
+                        
+                        chatItem.addEventListener('click', () => openChat(userId, userData));
+                        
+                        // Filter chat berdasarkan tab yang aktif
+                        if (activeFilter === 'all') {
+                            chatList.appendChild(chatItem);
+                        } else if (activeFilter === 'unread' && !isRead) {
+                            chatList.appendChild(chatItem);
+                        } else if (activeFilter === 'groups' && userData.isGroup) {
+                            chatList.appendChild(chatItem);
+                        }
+                    });
+                });
+            }
+            
+            // --- FUNGSI LAINNYA (TIDAK BERUBAH) ---
+            function openChat(userId, userData) {
+                activeChat = userId;
+                chatName.textContent = userData.name;
+                chatStatus.textContent = userData.status || 'Online';
+                chatProfileImg.src = userData.profilePicture || `https://i.pravatar.cc/150?img=${Math.floor(Math.random() * 70)}`;
+                
+                chatWindow.classList.add('active');
+                
+                messagesEl.innerHTML = '';
+                loadMessages(userId);
+                
+                database.ref(`users/${userId}`).update({ lastMessageRead: true });
+            }
+            
+            function loadMessages(userId) {
+                const messagesRef = database.ref(`messages/${userId}`);
+                messagesRef.on('value', (snapshot) => {
+                    messagesEl.innerHTML = '';
+                    snapshot.forEach((childSnapshot) => {
+                        const messageData = childSnapshot.val();
+                        renderMessage(messageData);
+                    });
+                    messagesEl.scrollTop = messagesEl.scrollHeight;
+                });
+            }
+            
+            function renderMessage(data) {
+                const messageEl = document.createElement('div');
+                const isSent = data.sender === currentUser;
+                messageEl.classList.add('message', isSent ? 'sent' : 'received');
+                
+                const messageBubble = document.createElement('div');
+                messageBubble.classList.add('message-bubble');
+                messageBubble.textContent = data.text;
+                
+                const messageTime = document.createElement('div');
+                messageTime.classList.add('message-time');
+                messageTime.textContent = data.time;
+                
+                messageEl.appendChild(messageBubble);
+                messageEl.appendChild(messageTime);
+                messagesEl.appendChild(messageEl);
+            }
+            
+            function sendMessage() {
+                const text = messageInput.value.trim();
+                if (!text || !activeChat) return;
+                
+                const now = new Date();
+                const timeString = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+                
+                const newMessage = { 
+                    sender: currentUser, 
+                    text: text, 
+                    time: timeString,
+                    timestamp: now.getTime()
+                };
+                
+                database.ref(`messages/${activeChat}`).push(newMessage);
+                database.ref(`users/${activeChat}`).update({
+                    lastMessage: text,
+                    lastMessageTime: timeString,
+                    lastMessageRead: false
+                });
+                
+                messageInput.value = '';
+            }
+            
+            function formatTime(timeString) {
+                if (!timeString) return '';
+                const now = new Date();
+                const time = new Date();
+                const [hours, minutes] = timeString.split(':');
+                time.setHours(parseInt(hours));
+                time.setMinutes(parseInt(minutes));
+                
+                if (time.toDateString() === now.toDateString()) return timeString;
+                
+                const yesterday = new Date(now);
+                yesterday.setDate(yesterday.getDate() - 1);
+                if (time.toDateString() === yesterday.toDateString()) return 'Kemarin';
+                
+                const weekAgo = new Date(now);
+                weekAgo.setDate(weekAgo.getDate() - 7);
+                if (time > weekAgo) {
+                    const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+                    return days[time.getDay()];
+                }
+                
+                return time.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+            }
+            
+            // --- EVENT LISTENERS ---
+            sendBtn.addEventListener('click', sendMessage);
+            messageInput.addEventListener('keypress', (e) => e.key === 'Enter' && sendMessage());
+            
+            backBtn.addEventListener('click', () => {
+                chatWindow.classList.remove('active');
+            });
+            
+            filterTabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    filterTabs.forEach(t => t.classList.remove('active'));
+                    tab.classList.add('active');
+                    activeFilter = tab.dataset.filter;
+                    loadChatList(); // Muat ulang daftar saat filter berubah
+                });
+            });
+            
+            // Inisialisasi aplikasi: Muat daftar chat saat halaman dimuat
+            loadChatList();
+        });
+    </script>
+</body>
+</html>
