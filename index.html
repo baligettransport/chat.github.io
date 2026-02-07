@@ -5,8 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BGT PRO - Aplikasi Pesan Real-Time</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-database-compat.js"></script>
     <style>
         /* --- VARIABEL & GAYA DASAR --- */
         :root { 
@@ -20,6 +18,7 @@
             --header: #0b141a;
             --hover: #182229;
             --filter-active: #8696a0;
+            --sidebar-width: 350px; /* Variabel untuk lebar sidebar */
         }
         
         * { 
@@ -48,6 +47,7 @@
             height: 100%;
             display: flex;
         }
+        
         .sidebar { 
             background-color: var(--sidebar); 
             display: flex; 
@@ -56,6 +56,7 @@
             height: 100%;
             flex-shrink: 0;
         }
+        
         .chat-window { 
             display: flex; 
             flex-direction: column; 
@@ -64,6 +65,7 @@
             width: 100%;
             height: 100%;
         }
+        
         .back-btn {
             display: block;
             margin-right: 15px;
@@ -72,14 +74,37 @@
             cursor: pointer;
         }
 
-        /* --- TAMPILAN MOBILE --- */
-        @media (max-width: 768px) {
+        /* --- TAMPILAN TABLET (768px ke atas) --- */
+        @media (min-width: 768px) {
+            body {
+                flex-direction: row;
+            }
+            .sidebar {
+                width: var(--sidebar-width);
+                position: static;
+                border-right: 1px solid rgba(0,0,0,0.1);
+            }
+            .chat-window {
+                position: static;
+                left: auto;
+                flex-grow: 1;
+                transition: none;
+                width: calc(100% - var(--sidebar-width));
+            }
+            .back-btn {
+                display: none !important;
+            }
+        }
+
+        /* --- TAMPILAN MOBILE (di bawah 768px) --- */
+        @media (max-width: 767px) {
             body {
                 flex-direction: column;
             }
             .sidebar {
                 position: relative;
                 z-index: 1;
+                width: 100%;
             }
             .chat-window {
                 position: absolute;
@@ -87,29 +112,20 @@
                 left: 100%;
                 transition: left 0.3s ease-out;
                 z-index: 2;
+                width: 100%;
             }
             .chat-window.active {
                 left: 0;
             }
         }
 
-        /* --- TAMPILAN DESKTOP --- */
-        @media (min-width: 769px) {
-            body {
-                flex-direction: row;
-            }
+        /* --- TAMPILAN DESKTOP BESAR (1200px ke atas) --- */
+        @media (min-width: 1200px) {
             .sidebar {
-                width: 350px;
-                position: static;
+                width: var(--sidebar-width);
             }
             .chat-window {
-                position: static;
-                left: auto;
-                flex-grow: 1;
-                transition: none;
-            }
-            .back-btn {
-                display: none !important;
+                width: calc(100% - var(--sidebar-width));
             }
         }
 
@@ -432,6 +448,39 @@
             font-size: 100px; 
             margin-bottom: 20px; 
         }
+        
+        /* --- RESPONSIVITAS TAMBAHAN --- */
+        @media (max-width: 480px) {
+            .sidebar-header .logo {
+                font-size: 18px;
+            }
+            
+            .sidebar-header .icons {
+                gap: 20px;
+                font-size: 18px;
+            }
+            
+            .filter-tab {
+                font-size: 13px;
+                padding: 5px 10px;
+                margin-right: 15px;
+            }
+            
+            .chat-item img {
+                width: 45px;
+                height: 45px;
+                margin-right: 10px;
+            }
+            
+            .chat-item-details h4 {
+                font-size: 15px;
+            }
+            
+            .chat-item-details p {
+                font-size: 12px;
+                width: 180px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -456,7 +505,7 @@
             </div>
             
             <div class="chat-list" id="chat-list">
-                <!-- Daftar chat akan dimuat dari Firebase secara real-time -->
+                <p style="color: #8696a0; text-align: center; padding: 20px;">Belum ada kontak</p>
             </div>
         </aside>
 
@@ -465,8 +514,8 @@
                 <i class="fas fa-arrow-left back-btn" id="back-btn"></i>
                 <img src="https://i.pravatar.cc/150?img=69" alt="Profile" id="chat-profile-img">
                 <div class="info">
-                    <h3 id="chat-name">Pilih chat untuk memulai</h3>
-                    <p id="chat-status">Pilih kontak dari daftar</p>
+                    <h3 id="chat-name"></h3>
+                    <p id="chat-status"></p>
                 </div>
                 <div class="icons">
                     <i class="fas fa-video"></i>
@@ -479,38 +528,21 @@
             <div class="messages" id="messages">
                 <div class="welcome-screen">
                     <i class="fab fa-whatsapp"></i>
-                    <h2>Selamat datang di BGT PRO</h2>
-                    <p>Pilih chat untuk memulai percakapan</p>
                 </div>
             </div>
             
             <div class="chat-input">
                 <i class="fas fa-smile"></i>
                 <i class="fas fa-paperclip"></i>
-                <input type="text" id="message-input" placeholder="Ketik pesan...">
+                <input type="text" id="message-input" placeholder="" disabled>
                 <i class="fas fa-microphone"></i>
-                <button id="send-btn"><i class="fas fa-paper-plane"></i></button>
+                <button id="send-btn" disabled><i class="fas fa-paper-plane"></i></button>
             </div>
         </main>
     </div>
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            // --- KONFIGURASI FIREBASE ---
-            const firebaseConfig = { 
-                apiKey: "AIzaSyCahZIFKFXMCokFNxCpFokNSVtKzN4llus", 
-                authDomain: "cedar-setup-425414-d7.firebaseapp.com", 
-                databaseURL: "https://cedar-setup-425414-d7-default-rtdb.firebaseio.com", 
-                projectId: "cedar-setup-425414-d7", 
-                storageBucket: "cedar-setup-425414-d7.firebasestorage.app", 
-                messagingSenderId: "723545991983", 
-                appId: "1:723545991983:web:379548d2b425a502a60fda", 
-                measurementId: "G-FPL6PF3KWJ" 
-            };
-            
-            firebase.initializeApp(firebaseConfig);
-            const database = firebase.database();
-            
             // --- ELEMEN DOM ---
             const chatList = document.getElementById('chat-list');
             const messagesEl = document.getElementById('messages');
@@ -523,187 +555,47 @@
             const backBtn = document.getElementById('back-btn');
             const filterTabs = document.querySelectorAll('.filter-tab');
             
-            let currentUser = "User";
             let activeChat = null;
             let activeFilter = 'all';
             
-            // --- FUNGSI UNTUK MEMUAT DAFTAR CHAT DARI FIREBASE ---
-            function loadChatList() {
-                const usersRef = database.ref('users');
-                
-                // Listener real-time untuk perubahan data di Firebase
-                usersRef.on('value', (snapshot) => {
-                    chatList.innerHTML = ''; // Kosongkan daftar sebelumnya
-                    
-                    if (!snapshot.exists()) {
-                        // Tampilkan pesan jika tidak ada data
-                        chatList.innerHTML = '<p style="color: #8696a0; text-align: center; padding: 20px;">Belum ada kontak. Tambahkan pengguna baru di Firebase.</p>';
-                        return;
-                    }
-                    
-                    snapshot.forEach((childSnapshot) => {
-                        const userData = childSnapshot.val();
-                        const userId = childSnapshot.key;
-                        
-                        // Jangan tampilkan pengguna saat ini di daftar chat
-                        if (userId === currentUser) return;
-                        
-                        const chatItem = document.createElement('div');
-                        chatItem.classList.add('chat-item');
-                        chatItem.dataset.userId = userId;
-                        
-                        const lastMessageTime = userData.lastMessageTime || '';
-                        const formattedTime = formatTime(lastMessageTime);
-                        
-                        const isRead = userData.lastMessageRead !== false;
-                        const statusClass = isRead ? 'read' : 'unread';
-                        const statusIcon = isRead ? 'fa-check-double' : 'fa-check';
-                        
-                        const unreadBadge = !isRead ? '<div class="unread-badge">1</div>' : '';
-                        
-                        chatItem.innerHTML = `
-                            <img src="${userData.profilePicture || `https://i.pravatar.cc/150?img=${Math.floor(Math.random() * 70)}`}" alt="${userData.name}">
-                            <div class="chat-item-details">
-                                <div class="chat-item-info">
-                                    <h4>${userData.name}</h4>
-                                    <p>${userData.lastMessage || 'Belum ada pesan'}</p>
-                                </div>
-                                <div class="chat-item-meta">
-                                    <div class="chat-item-time">${formattedTime}</div>
-                                    <div class="message-status ${statusClass}">
-                                        <i class="fas ${statusIcon}"></i>
-                                    </div>
-                                    ${unreadBadge}
-                                </div>
-                            </div>
-                        `;
-                        
-                        chatItem.addEventListener('click', () => openChat(userId, userData));
-                        
-                        // Filter chat berdasarkan tab yang aktif
-                        if (activeFilter === 'all') {
-                            chatList.appendChild(chatItem);
-                        } else if (activeFilter === 'unread' && !isRead) {
-                            chatList.appendChild(chatItem);
-                        } else if (activeFilter === 'groups' && userData.isGroup) {
-                            chatList.appendChild(chatItem);
-                        }
-                    });
-                });
-            }
-            
-            // --- FUNGSI LAINNYA (TIDAK BERUBAH) ---
-            function openChat(userId, userData) {
-                activeChat = userId;
-                chatName.textContent = userData.name;
-                chatStatus.textContent = userData.status || 'Online';
-                chatProfileImg.src = userData.profilePicture || `https://i.pravatar.cc/150?img=${Math.floor(Math.random() * 70)}`;
-                
-                chatWindow.classList.add('active');
-                
-                messagesEl.innerHTML = '';
-                loadMessages(userId);
-                
-                database.ref(`users/${userId}`).update({ lastMessageRead: true });
-            }
-            
-            function loadMessages(userId) {
-                const messagesRef = database.ref(`messages/${userId}`);
-                messagesRef.on('value', (snapshot) => {
-                    messagesEl.innerHTML = '';
-                    snapshot.forEach((childSnapshot) => {
-                        const messageData = childSnapshot.val();
-                        renderMessage(messageData);
-                    });
-                    messagesEl.scrollTop = messagesEl.scrollHeight;
-                });
-            }
-            
-            function renderMessage(data) {
-                const messageEl = document.createElement('div');
-                const isSent = data.sender === currentUser;
-                messageEl.classList.add('message', isSent ? 'sent' : 'received');
-                
-                const messageBubble = document.createElement('div');
-                messageBubble.classList.add('message-bubble');
-                messageBubble.textContent = data.text;
-                
-                const messageTime = document.createElement('div');
-                messageTime.classList.add('message-time');
-                messageTime.textContent = data.time;
-                
-                messageEl.appendChild(messageBubble);
-                messageEl.appendChild(messageTime);
-                messagesEl.appendChild(messageEl);
-            }
-            
-            function sendMessage() {
-                const text = messageInput.value.trim();
-                if (!text || !activeChat) return;
-                
-                const now = new Date();
-                const timeString = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-                
-                const newMessage = { 
-                    sender: currentUser, 
-                    text: text, 
-                    time: timeString,
-                    timestamp: now.getTime()
-                };
-                
-                database.ref(`messages/${activeChat}`).push(newMessage);
-                database.ref(`users/${activeChat}`).update({
-                    lastMessage: text,
-                    lastMessageTime: timeString,
-                    lastMessageRead: false
-                });
-                
-                messageInput.value = '';
-            }
-            
-            function formatTime(timeString) {
-                if (!timeString) return '';
-                const now = new Date();
-                const time = new Date();
-                const [hours, minutes] = timeString.split(':');
-                time.setHours(parseInt(hours));
-                time.setMinutes(parseInt(minutes));
-                
-                if (time.toDateString() === now.toDateString()) return timeString;
-                
-                const yesterday = new Date(now);
-                yesterday.setDate(yesterday.getDate() - 1);
-                if (time.toDateString() === yesterday.toDateString()) return 'Kemarin';
-                
-                const weekAgo = new Date(now);
-                weekAgo.setDate(weekAgo.getDate() - 7);
-                if (time > weekAgo) {
-                    const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
-                    return days[time.getDay()];
-                }
-                
-                return time.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
-            }
-            
-            // --- EVENT LISTENERS ---
-            sendBtn.addEventListener('click', sendMessage);
-            messageInput.addEventListener('keypress', (e) => e.key === 'Enter' && sendMessage());
-            
-            backBtn.addEventListener('click', () => {
-                chatWindow.classList.remove('active');
-            });
-            
+            // --- FUNGSI UNTUK FILTER TABS ---
             filterTabs.forEach(tab => {
                 tab.addEventListener('click', () => {
                     filterTabs.forEach(t => t.classList.remove('active'));
                     tab.classList.add('active');
                     activeFilter = tab.dataset.filter;
-                    loadChatList(); // Muat ulang daftar saat filter berubah
+                    // Tetap tampilkan pesan kosong
+                    chatList.innerHTML = '<p style="color: #8696a0; text-align: center; padding: 20px;">Belum ada kontak</p>';
                 });
             });
             
-            // Inisialisasi aplikasi: Muat daftar chat saat halaman dimuat
-            loadChatList();
+            // --- EVENT LISTENERS ---
+            backBtn.addEventListener('click', () => {
+                chatWindow.classList.remove('active');
+            });
+            
+            // Fungsi-fungsi Firebase dinonaktifkan sepenuhnya
+            // Tidak ada koneksi ke database
+            // Tidak ada data yang akan dimuat
+            
+            // --- DETEKSI UKURAN LAYAR ---
+            function checkScreenSize() {
+                const width = window.innerWidth;
+                console.log('Screen width:', width);
+                
+                // Tambahkan logika jika perlu menangani ukuran layara tertentu
+                if (width < 480) {
+                    console.log('Mobile device detected');
+                } else if (width >= 768 && width < 1200) {
+                    console.log('Tablet device detected');
+                } else if (width >= 1200) {
+                    console.log('Desktop device detected');
+                }
+            }
+            
+            // Panggil fungsi saat halaman dimuat dan saat di-resize
+            checkScreenSize();
+            window.addEventListener('resize', checkScreenSize);
         });
     </script>
 </body>
